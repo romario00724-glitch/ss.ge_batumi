@@ -1,4 +1,4 @@
-name: ssge-watcher
+name: ss.ge_batumi
 
 on:
   schedule:
@@ -9,7 +9,7 @@ permissions:
   contents: write             # щоб зберігати state.json у репозиторій
 
 concurrency:
-  group: ssge-watcher
+  group: ss.ge_batumi
   cancel-in-progress: false
 
 jobs:
