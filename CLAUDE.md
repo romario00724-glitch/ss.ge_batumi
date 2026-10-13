@@ -87,6 +87,10 @@ GitHub → Settings → Secrets and variables → Actions:
 | `TELEGRAM_CHAT_ID` (secret) | та сама робоча група, що в myhome |
 | `OPENAI_API_KEY` (secret) | **не потрібен**: ss.ge сам дає опис російською. Лише запасний перекладач |
 
+Перекладач — `gpt-5-mini` з `reasoning_effort: minimal` (`OPENAI_REASONING`), як у myhome_batumi з
+13.10.2026: «роздуми» були 93% токенів перекладу, якість без них та сама. `gpt-5-nano` вигадує назви
+вулиць — не брати (подробиці — CLAUDE.md у myhome_batumi).
+
 Локально — `telegram.json` у корені (`token`, `chat_id`, `openai_key`), у `.gitignore`.
 Репозиторій **публічний**: жодних ключів у коді й комітах.
 
