@@ -5,6 +5,10 @@
 myhome, але **окремим ботом** з власним токеном. Уся логіка — в одному файлі `watcher.py`.
 Мова коду, коментарів і повідомлень — українська.
 
+12.10.2026 перейменовано: репозиторій `ssge-watcher` → `ss.ge_batumi`, папка на Mac
+`~/Desktop/Скрапери/ss.ge_batumi`; близнюк `myhome-watcher` → `myhome_batumi`. Стара назва лишилася
+в історії комітів і старих чатах; GitHub перенаправляє старі адреси на нові.
+
 ## Близнюк: ~/Desktop/Скрапери/myhome_batumi
 
 Цей проєкт — копія `myhome_batumi` (github.com/romario00724-glitch/myhome_batumi), у якій
