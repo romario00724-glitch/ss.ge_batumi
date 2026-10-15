@@ -85,13 +85,16 @@ GitHub → Settings → Secrets and variables → Actions:
 |---|---|
 | `TELEGRAM_BOT_TOKEN` (secret) | токен **цього** бота (не myhome). Він же ключ HMAC для відбитків телефонів у `state.json` (`phone_fingerprint`): заміна токена = лічильник «телефон уже траплявся» почне рахувати заново |
 | `TELEGRAM_CHAT_ID` (secret) | та сама робоча група, що в myhome |
-| `OPENAI_API_KEY` (secret) | **не потрібен**: ss.ge сам дає опис російською. Лише запасний перекладач |
+| `ANTHROPIC_API_KEY` (secret) | переклад російською грузинських/англійських описів і адрес (Claude Haiku 5.5, з 15.10.2026). Без нього — просто без перекладу |
 
-Перекладач — `gpt-5-mini` з `reasoning_effort: minimal` (`OPENAI_REASONING`), як у myhome_batumi з
-13.10.2026: «роздуми» були 93% токенів перекладу, якість без них та сама. `gpt-5-nano` вигадує назви
-вулиць — не брати (подробиці — CLAUDE.md у myhome_batumi).
+**Переклад.** ss.ge сам перекладає більшість оголошень, але не всі: 15.10.2026 у 12 з 320 (~4%) опис був
+лише грузинською. Їх перекладає Claude — код дослівно як у myhome_batumi (масова правка координатора №2,
+коміт 2ba21ec там): `AI_MODEL = "claude-haiku-5-5"`, бібліотека `anthropic` (`requirements.txt`), функція
+`claude_json` з `output_config: {"effort": "low", "format": json_schema}`, без `temperature`; відповідь — перший
+блок `text`; refusal / max_tokens / HTTP-помилка → оголошення йде без перекладу. Російські описи Claude не
+надсилаються зовсім. До 15.10.2026 тут був OpenAI `gpt-5-mini` (без ключа, тобто не працював).
 
-Локально — `telegram.json` у корені (`token`, `chat_id`, `openai_key`), у `.gitignore`.
+Локально — `telegram.json` у корені (`token`, `chat_id`, `anthropic_key`), у `.gitignore`.
 Репозиторій **публічний**: жодних ключів у коді й комітах.
 
 ## Правила роботи з кодом
@@ -99,7 +102,7 @@ GitHub → Settings → Secrets and variables → Actions:
 - **Не запускати `python watcher.py` на комп'ютері паралельно з GitHub** — у двох копій різні
   `state.json`, і ті самі оголошення прийдуть у групу двічі.
 - **`import watcher` + наявний `telegram.json` = реальні повідомлення** в робочу групу. У тестах
-  глушити `tg_call`, `tg_upload`, `download_image`, `_post_json` (OpenAI) і `save_state` (або
+  глушити `tg_call`, `tg_upload`, `download_image`, `anthropic.Anthropic` (переклад; або одразу `claude_json`) і `save_state` (або
   підмінити `STATE_FILE`). Без `telegram.json` і змінних `TELEGRAM_*` бот лише друкує в консоль —
   так безпечно ганяти `--test` і `--once` проти живого ss.ge (підмінивши `STATE_FILE`).
 - Користувач не програміст: пояснювати простими словами, українською.
