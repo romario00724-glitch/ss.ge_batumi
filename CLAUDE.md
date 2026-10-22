@@ -42,6 +42,38 @@ cron-job.org ──► workflow_dispatch ──► GitHub Actions: python watche
   (`Actions: Read and write`), **спливає 28.09.2027** — тоді замовкнуть обидва боти.
 - Запуски по одному (`concurrency: ss.ge_batumi`), checkout з `ref: ${{ github.ref_name }}`.
 - Після запуску workflow комітить `state.json` у `main` — локальний `main` відстає: `git pull`.
+- **Ключ до API з 22.10.2026 бере Mac** (див. нижче): без нього бот на GitHub ss.ge не читає.
+
+## Ключ до API бере Mac (з 22.10.2026)
+
+Масова правка за зразком ss.ge_tbilisi (коміт 5bc8320 там), рішення користувача 22.10.2026 («зроби так само»).
+22.10.2026 ~16:00 ss.ge закрив серверам GitHub усе, що стоїть за Cloudflare: `home.ss.ge` — 403
+«Just a moment...» (у журналі Actions: «ключ до API з головної: сторінка ss.ge: HTTP 403», бот стояв
+з ~16:00 до 22:14). З Mac усе відкривається. **API `api-gateway.ss.ge` — не за Cloudflare і GitHub
+відкритий**, бракує лише гостьового ключа: він є тільки на сторінках `home.ss.ge` (`credentialsToken`,
+JWT, діє 1 год, IP не прив'язаний). Тому ключ бере Mac, решта лишається на GitHub.
+
+```
+Mac (launchd, кожні 20 хв) ──► home.ss.ge ──► ключ ──► gh secret set SSGE_API_TOKEN
+GitHub (кожні 10 хв) ──► бере SSGE_API_TOKEN ──► API ss.ge ──► група
+```
+
+- `mac_token.py` — у репозиторії (дослівно як у Тбілісі, крім `REPO`), але launchd не має доступу до
+  «Робочого столу», тож на Mac працює **копія**: `~/Library/Application Support/ss.ge_batumi/mac_token.py`;
+  розклад — `~/Library/LaunchAgents/local.ss.ge_batumi.token.plist` (`StartInterval` 1200, `RunAtLoad`);
+  журнал — `~/Library/Logs/ss.ge_batumi_token.log`. 3 спроби з паузою 30 с. Ключ у журнал не пишеться.
+  `gh` (`/opt/homebrew/bin/gh`) бере вхід з Keychain. Це **окреме** завдання від Тбілісі — те пише секрет
+  у свій репозиторій, це в `ss.ge_batumi`.
+- **Після зміни `mac_token.py`** скопіювати його в `~/Library/Application Support/ss.ge_batumi/`.
+  Перезапуск розкладу: `launchctl kickstart gui/$(id -u)/local.ss.ge_batumi.token`; вимкнути —
+  `launchctl bootout gui/$(id -u)/local.ss.ge_batumi.token`.
+- У `watcher.py` (`token_expiry`, `mac_token`, `api_token`; дослівно як у Тбілісі): спершу бере
+  `SSGE_API_TOKEN`, якщо той діє ще ≥ 2 хв (`exp` з JWT, без перевірки підпису); інакше або на 401 — як
+  раніше, з головної (якщо ss.ge зніме блок, бот працюватиме й без Mac). У журналі Actions видно, звідки
+  ключ: «ключ до API — з Mac, діє до…» чи «ключ з Mac прострочений… Mac, мабуть, спить».
+- **Залежність від Mac:** поки Mac спить чи вимкнений, ключ живе ще до години, далі бот стоїть. Після 6
+  невдалих перевірок (`FAIL_ALERT_AFTER`) в основну групу йде «⚠️ …», після відновлення — «✅». Пропущене
+  приходить, якщо воно серед 48 найновіших у пошуку (`PAGES_PER_RUN` 3).
 
 ## Як бот читає ss.ge
 
@@ -94,6 +126,7 @@ GitHub → Settings → Secrets and variables → Actions:
 | `TELEGRAM_CHAT_ID` (secret) | та сама робоча група, що в myhome (оренда, основна) |
 | `TELEGRAM_CHAT_ID_SALE` (secret) | група продажу «, ss/myhome/fb (Продажа)» — для пошуків з `\| sale` (з 16.10.2026), `-1004313346200` (супергрупа; старий `-5209535433` не діє). Кілька чатів — через кому |
 | `ANTHROPIC_API_KEY` (secret) | переклад російською грузинських/англійських описів і адрес (Claude Haiku 5.5, з 15.10.2026). Без нього — просто без перекладу |
+| `SSGE_API_TOKEN` (secret) | гостьовий ключ до API ss.ge; кожні 20 хв його перезаписує Mac (`mac_token.py`, з 22.10.2026). Вручну не міняти |
 
 **Переклад.** ss.ge сам перекладає більшість оголошень, але не всі: 15.10.2026 у 12 з 320 (~4%) опис був
 лише грузинською. Їх перекладає Claude — код дослівно як у myhome_batumi (масова правка координатора №2,
@@ -188,6 +221,14 @@ GitHub → Settings → Secrets and variables → Actions:
   які перевірки, чи перезапущено бота.
 
 ## Історія
+
+### 22.10.2026 — ключ до API бере Mac (за зразком ss.ge_tbilisi)
+- Причина й схема — у розділі «Ключ до API бере Mac». Змінено: `watcher.py` (`SSGE_API_TOKEN`), `watch.yml`
+  (змінна середовища), новий `mac_token.py`; на Mac — копія скрипта, `local.ss.ge_batumi.token.plist`, `bootstrap`
+  у launchd; секрет `SSGE_API_TOKEN` у GitHub записав перший запуск launchd (22:14, `gh secret set`, з дозволу
+  користувача — «зроби так само»).
+- Перевірки до push: 8 офлайн-перевірок `api_token` (дійсний / майже прострочений / прострочений / зіпсований /
+  без ключа / 401 → головна / кеш / повернення до головної), `fetch_token()` з Mac віддав ключ, `plutil -lint`.
 
 ### 16.10.2026 — Telegram лише російською (масова правка координатора «Telegram — лише російською»)
 - Рішення користувача: у всіх групах (Батумі й Тбілісі) бот пише лише російською; журнал, коментарі, CLAUDE.md —

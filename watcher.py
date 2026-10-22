@@ -15,6 +15,7 @@ ss.ge -> Telegram: нові оголошення від власників.
 """
 
 import argparse
+import base64
 import hashlib
 import hmac
 import html
@@ -41,6 +42,8 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")  # кілька чатів 
 # (у telegram.json — "chat_id_sale"). Без нього такий пошук пропускається, в основну групу не йде.
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")  # якщо задано — грузинські/англійські описи в чаті перекладаються
 AI_MODEL = "claude-haiku-5-5"  # до 15.10.2026 — OpenAI gpt-5-mini
+SSGE_API_TOKEN = os.getenv("SSGE_API_TOKEN", "")  # ключ до API, який кладе в секрет Mac (mac_token.py):
+                                                   # з 22.10.2026 ss.ge не пускає сервери GitHub на свої сторінки
 
 LANG = "ru"                    # мова назв, описів і посилань з ss.ge: ru / en / ka
 ONLY_OWNERS = True             # завжди додавати фільтр «От собственника» (individualEntityOnly)
@@ -226,11 +229,39 @@ def page_data(url):
 
 
 _api_token = ""
+_mac_checked = False
+
+
+def token_expiry(token):
+    """Коли спливає ключ (ss.ge дає JWT із полем exp), або None, якщо його не прочитати."""
+    try:
+        part = token.split(".")[1]
+        payload = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+        return datetime.fromtimestamp(int(payload["exp"]), GEORGIA_TZ)
+    except (IndexError, KeyError, TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def mac_token():
+    """Ключ, який передав Mac (SSGE_API_TOKEN), якщо він діє ще хоча б 2 хвилини."""
+    if not SSGE_API_TOKEN:
+        return ""
+    expiry = token_expiry(SSGE_API_TOKEN)
+    if expiry and expiry > datetime.now(GEORGIA_TZ) + timedelta(minutes=2):
+        log(f"ключ до API — з Mac, діє до {expiry:%H:%M}")
+        return SSGE_API_TOKEN
+    log("ключ з Mac прострочений" + (f" (діяв до {expiry:%d.%m %H:%M})" if expiry else "")
+        + " — Mac, мабуть, спить чи вимкнений; пробую головну ss.ge")
+    return ""
 
 
 def api_token(refresh=False):
-    """Гостьовий ключ до API ss.ge. Сайт кладе його в кожну сторінку, діє він годину."""
-    global _api_token
+    """Гостьовий ключ до API ss.ge, діє він годину. Спершу — той, що передав Mac, інакше —
+    з головної: сайт кладе його в кожну сторінку (але з 22.10.2026 сервери GitHub не пускає)."""
+    global _api_token, _mac_checked
+    if not refresh and not _api_token and not _mac_checked:
+        _mac_checked = True
+        _api_token = mac_token()
     if refresh or not _api_token:
         try:
             data = page_data(f"{SITE}/{LANG}/")
