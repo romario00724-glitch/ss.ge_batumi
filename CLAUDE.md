@@ -1,8 +1,9 @@
 # ss.ge_batumi
 
 Бот стежить за пошуком на ss.ge (оренда квартир у Батумі, лише власники) і шле **нові**
-оголошення в робочу Telegram-групу «Скрапер Myhome.Ge (власники)» — ту саму, що й бот
-myhome, але **окремим ботом** з власним токеном. З 16.10.2026 — ще й **продаж** від власників (Батумі з
+оголошення в робочу Telegram-групу «Скрапер Myhome.Ge (власники)» (27.10.2026 вона звалася вже «ss/myhome (аренда)» —
+так само, як група Тбілісі, але це інша група) — ту саму, що й бот myhome, але **окремим ботом** з власним токеном
+(@ssgewattcher15523_bot, «ss.ge монітор»). З 16.10.2026 — ще й **продаж** від власників (Батумі з
 околицями) в окрему групу продажу (див. «Дві групи: оренда й продаж»). Уся логіка — у `watcher.py`,
 фільтр «не сотрудничаю с риелторами» для продажу — у `no_realtors.py`.
 Мова коду, коментарів і журналу — українська. **У Telegram бот пише лише російською** — в обох групах
@@ -29,7 +30,47 @@ workflow) — спитай, чи повторити в myhome_batumi, і нав�
 повертати — у myhome її прибрали 30.09.2026 (див. CLAUDE.md там). Пошуків продажу три, а не шість, як у myhome:
 Чакві тут — окреме «місто» в тому самому `cityIdList` (див. «Дві групи»).
 
-## Як запускається
+## Як запускається (з 27.10.2026 — на Mac)
+
+```
+Mac (launchd, :05 :15 :25…) ──► mac_run.py: git pull ──► watcher.py --once ──► групи
+                                            └──► state.json ──► git push у main
+```
+
+27.10.2026 ~16:10 ss.ge сховав за Cloudflare і API, і сервери GitHub більше не можуть читати ss.ge зовсім (див.
+«Історію»). Рішення користувача («зроби так само, як у ss.ge_tbilisi»): перевірки робить сам Mac.
+- Копія репозиторію — `~/Library/Application Support/ss.ge_batumi/repo/` (`git clone` плюс `telegram.json`,
+  `chmod 600`), бо launchd не має доступу до «Робочого столу». Розклад —
+  `~/Library/LaunchAgents/local.ss.ge_batumi.watch.plist` (`StartCalendarInterval`, хвилини 5,15,…,55 — як був
+  будильник, зсув від myhome_batumi, що шле в ту саму групу; без `RunAtLoad`; копія plist — і в
+  `Application Support/ss.ge_batumi/`). Python — `/Library/Frameworks/Python.framework/Versions/3.14/bin/python3`
+  (у ньому є `curl_cffi` і `anthropic`). Журнал — `~/Library/Logs/ss.ge_batumi.log` (росте ~100–200 КБ на день,
+  раз на кілька місяців можна чистити).
+- `mac_run.py` — дослівно як у ss.ge_tbilisi, крім шляхів: `git pull --rebase --autostash` (не вдався —
+  `rebase --abort` і прохід зі старим кодом), `watcher.py --once` (до 8 хв), коміт `state.json` («state: update
+  [skip ci]») і `push`: 3 спроби з `pull --rebase -X theirs` — у конфлікті перемагає база з Mac; невикладені
+  коміти докладає наступного разу. Коміти — від romario00724-glitch (локальний `git config` копії), вхід —
+  `gh auth git-credential`.
+- **Код міняти тут, на «Робочому столі», і `git push`** — Mac підтягне його перед наступним проходом сам (і
+  `mac_run.py` теж). Копію в Application Support руками не правити. `telegram.json` там — окремий файл: якщо
+  міняєте його тут, скопіюйте й туди.
+- Ключ до API бот бере сам з головної — у журналі «ключ до API — з головної ss.ge, діє до…».
+- **Mac спить чи вимкнений — бот стоїть**; після пробудження launchd робить один пропущений прохід. Пропущене
+  приходить, якщо воно серед 48 найновіших у пошуку (`PAGES_PER_RUN` 3). Після 6 невдалих проходів поспіль в
+  основну групу йде «⚠️ …», після відновлення — «✅». Як і боти tg/threads/fb, працює, поки Mac на зарядці й не спить.
+- Чи живий: `tail ~/Library/Logs/ss.ge_batumi.log` або свіжі коміти «state: update» від romario00724-glitch на
+  GitHub. Позачерговий прохід — `launchctl kickstart gui/$(id -u)/local.ss.ge_batumi.watch`; вимкнути —
+  `launchctl bootout gui/$(id -u)/local.ss.ge_batumi.watch` і прибрати plist з LaunchAgents (інакше після
+  перезавантаження ввімкнеться знову).
+- **GitHub вимкнено:** workflow — `gh workflow disable watch.yml` (секрети лишилися); завдання cron-job.org
+  (job 8544193) вимикає користувач сам — входу туди в Claude немає (поки воно ввімкнене, його виклики вимкненого
+  workflow просто не спрацьовують). Повернути на GitHub (якщо ss.ge колись відкриє API): `gh workflow enable
+  watch.yml`, увімкнути завдання cron-job.org і вимкнути розклад Mac — **ніколи не обидва разом**, інакше
+  оголошення прийдуть двічі.
+- Передача ключа на GitHub (`mac_token.py`, розклад `local.ss.ge_batumi.token`) з 27.10.2026 не потрібна й
+  вимкнена: plist перенесено в `~/Library/Application Support/ss.ge_batumi/disabled/`.
+
+### До 27.10.2026 — GitHub Actions (тепер вимкнено)
 
 ```
 cron-job.org ──► workflow_dispatch ──► GitHub Actions: python watcher.py --once
@@ -43,11 +84,12 @@ cron-job.org ──► workflow_dispatch ──► GitHub Actions: python watche
 - Запуски по одному (`concurrency: ss.ge_batumi`), checkout з `ref: ${{ github.ref_name }}`.
 - Після запуску workflow комітить `state.json` у `main` — локальний `main` відстає: `git pull`.
 - **Ключ до API з 22.10.2026 бере Mac** (див. нижче): без нього бот на GitHub ss.ge не читає.
-- **З 27.10.2026 ~16:10 бот на GitHub стоїть:** API `api-gateway.ss.ge` теж став за Cloudflare і серверам
-  GitHub віддає 403 «Just a moment...» — з ключем чи без (див. «Історію»). Mac далі передає ключ; якщо
-  ss.ge зніме блок, бот запрацює сам і напише «✅» в основну групу.
+- З 27.10.2026 ~16:10 API `api-gateway.ss.ge` теж за Cloudflare і серверам GitHub віддає 403 «Just a moment...» —
+  з ключем чи без (див. «Історію»), тому бот перенесено на Mac.
 
-## Ключ до API бере Mac (з 22.10.2026)
+## Ключ до API бере Mac (22–27.10.2026, тепер вимкнено)
+
+Поки бот працював на GitHub. З 27.10.2026 бот сам на Mac і ключ бере сам (див. «Як запускається»).
 
 Масова правка за зразком ss.ge_tbilisi (коміт 5bc8320 там), рішення користувача 22.10.2026 («зроби так само»).
 22.10.2026 ~16:00 ss.ge закрив серверам GitHub усе, що стоїть за Cloudflare: `home.ss.ge` — 403
@@ -130,6 +172,9 @@ GitHub (кожні 10 хв) ──► бере SSGE_API_TOKEN ──► API ss.g
 
 ## Секрети й налаштування
 
+**З 27.10.2026 бот на Mac бере все з `telegram.json` своєї копії** (див. «Як запускається»); секрети GitHub нижче
+лишилися на випадок повернення на GitHub, `SSGE_API_TOKEN` більше не оновлюється.
+
 GitHub → Settings → Secrets and variables → Actions:
 
 | Назва | Що це |
@@ -147,7 +192,10 @@ GitHub → Settings → Secrets and variables → Actions:
 блок `text`; refusal / max_tokens / HTTP-помилка → оголошення йде без перекладу. Російські описи Claude не
 надсилаються зовсім. До 15.10.2026 тут був OpenAI `gpt-5-mini` (без ключа, тобто не працював).
 
-Локально — `telegram.json` у корені (`token`, `chat_id`, `chat_id_sale`, `anthropic_key`), у `.gitignore`.
+Локально — `telegram.json` у корені (`token`, `chat_id`, `chat_id_sale`, `anthropic_key`), у `.gitignore`. До
+27.10.2026 його на Mac не було (усе жило лише в секретах GitHub, а їх назад не прочитати); 27.10 користувач заповнив
+його сам: `token` — з @BotFather (той самий, що в секреті: відбитки телефонів у базі збіглися), `chat_id` і
+`anthropic_key` — як у myhome_batumi. Копія — у копії бота на Mac.
 Репозиторій **публічний**: жодних ключів у коді й комітах.
 
 ## Дві групи: оренда й продаж (з 16.10.2026)
@@ -223,8 +271,9 @@ GitHub → Settings → Secrets and variables → Actions:
 
 ## Правила роботи з кодом
 
-- **Не запускати `python watcher.py` на комп'ютері паралельно з GitHub** — у двох копій різні
-  `state.json`, і ті самі оголошення прийдуть у групу двічі.
+- **Не запускати `python watcher.py` з цієї папки** (тут теж є `telegram.json`) — бот уже працює на Mac з копії
+  в Application Support; у двох копій різні `state.json`, і ті самі оголошення прийдуть у групу двічі.
+  Позачерговий прохід — лише `launchctl kickstart` (див. «Як запускається»).
 - **`import watcher` + наявний `telegram.json` = реальні повідомлення** в робочу групу. У тестах
   глушити `tg_call`, `tg_upload`, `download_image`, `anthropic.Anthropic` (переклад; або одразу `claude_json`) і `save_state` (або
   підмінити `STATE_FILE`). Без `telegram.json` і змінних `TELEGRAM_*` бот лише друкує в консоль —
@@ -248,6 +297,32 @@ GitHub → Settings → Secrets and variables → Actions:
   які перевірки, чи перезапущено бота.
 
 ## Історія
+
+### 27.10.2026 — перевірки перенесено на Mac (як у ss.ge_tbilisi)
+- Причина: з ~16:10 API ss.ge за Cloudflare і серверам GitHub не відповідає (попередній запис). Рішення
+  користувача: «зроби так само, як у ss.ge_tbilisi» (коміти 3daec4e і 3674a54 там) — розклад launchd, `git pull` →
+  `watcher.py --once` → `state.json` на GitHub, workflow вимкнути. Схема й команди — у «Як запускається».
+- Змінено: новий `mac_run.py` (дослівно як у Тбілісі, крім шляхів), `watcher.py` пише в журнал «ключ до API — з
+  головної ss.ge, діє до…» (функції ключа й HTTP звірено з Тбілісі — дослівно), `mac_token.py` позначено як
+  невживаний; README, цей файл. На Mac: копія репозиторію в Application Support, `telegram.json` (`chmod 600`),
+  `local.ss.ge_batumi.watch.plist`; `local.ss.ge_batumi.token` — `bootout`, plist у `disabled/`. На GitHub:
+  `gh workflow disable watch.yml` (~17:19); тимчасовий запуск `diag-api` видалено.
+- `telegram.json` на Mac не було — бота налаштовували лише через секрети GitHub. Шаблон з підказками створено в
+  цій папці (номер групи продажу вписано), ключі вставив користувач. Переклад лишили (рішення користувача): у
+  найновіших оголошеннях Батумі опис лише грузинською в 6–14% (оренда 8%, продаж квартир 8%, будинків 6%,
+  комерції 14%), у Тбілісі — 0–4%, тому там переклад не знадобився.
+- Перевірки. Офлайн, у тимчасовій копії без Telegram з підставним «GitHub» (локальний bare-репозиторій): прохід з
+  живим ss.ge (ключ з головної, 15 нових, `state.json` викладено, `fail_streak` → 0); 7 випадків з підставним
+  `watcher.py` — звичайний прохід; без змін — без коміту; конфлікт `state.json` під час збереження і вже на старті
+  (перемагає Mac, `rebase` не зависає); новий код підтягується до проходу; «GitHub» недоступний — коміт доходить
+  наступного разу; завислий `watcher.py` зупиняється. Ключі — без повідомлень у групи: `getMe` —
+  @ssgewattcher15523_bot; `chat_id` — «ss/myhome (аренда)» (group, бот — адміністратор; той самий номер, що в
+  myhome_batumi, не тбіліський), `chat_id_sale` — «, ss/myhome/fb (Продажа)» (бот — учасник); переклад Claude
+  працює; відбитки телефонів з цим токеном збіглися в 10 з 12 авторів бази GitHub (з чужим ключем — 0), тобто
+  токен той самий.
+- Перший справжній прохід (`kickstart` о 17:20): ключ з головної, «оброблено нових оголошень: 17 з 17» (10 карток у
+  групи, 7 пропущено «у автора K оголошень на ss.ge»), `state.json` на GitHub о 17:21:17 (a7ea637, від
+  romario00724-glitch), `fail_streak` → 0.
 
 ### 27.10.2026 — ключ до API тепер у cookie; API закрився для GitHub
 - **Що сталося.** О ~13:29 ss.ge оновив сайт: `credentialsToken` з даних сторінки зник, Mac з 13:29 писав «на
