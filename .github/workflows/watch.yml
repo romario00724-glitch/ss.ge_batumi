@@ -34,7 +34,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_CHAT_ID_SALE: ${{ secrets.TELEGRAM_CHAT_ID_SALE }}   # група продажу (пошуки з «| sale»)
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          SSGE_API_TOKEN: ${{ secrets.SSGE_API_TOKEN }}   # ключ до API ss.ge, його кожні 20 хв кладе Mac (mac_token.py)
+          SSGE_API_TOKEN: ${{ secrets.SSGE_API_TOKEN }}   # ключ до API ss.ge, його кладе Mac (mac_token.py, перевіряє кожні 5 хв)
         run: python watcher.py --once
 
       - name: Save state.json

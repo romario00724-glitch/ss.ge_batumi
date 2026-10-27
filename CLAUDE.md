@@ -43,45 +43,57 @@ cron-job.org ──► workflow_dispatch ──► GitHub Actions: python watche
 - Запуски по одному (`concurrency: ss.ge_batumi`), checkout з `ref: ${{ github.ref_name }}`.
 - Після запуску workflow комітить `state.json` у `main` — локальний `main` відстає: `git pull`.
 - **Ключ до API з 22.10.2026 бере Mac** (див. нижче): без нього бот на GitHub ss.ge не читає.
+- **З 27.10.2026 ~16:10 бот на GitHub стоїть:** API `api-gateway.ss.ge` теж став за Cloudflare і серверам
+  GitHub віддає 403 «Just a moment...» — з ключем чи без (див. «Історію»). Mac далі передає ключ; якщо
+  ss.ge зніме блок, бот запрацює сам і напише «✅» в основну групу.
 
 ## Ключ до API бере Mac (з 22.10.2026)
 
 Масова правка за зразком ss.ge_tbilisi (коміт 5bc8320 там), рішення користувача 22.10.2026 («зроби так само»).
 22.10.2026 ~16:00 ss.ge закрив серверам GitHub усе, що стоїть за Cloudflare: `home.ss.ge` — 403
 «Just a moment...» (у журналі Actions: «ключ до API з головної: сторінка ss.ge: HTTP 403», бот стояв
-з ~16:00 до 22:14). З Mac усе відкривається. **API `api-gateway.ss.ge` — не за Cloudflare і GitHub
-відкритий**, бракує лише гостьового ключа: він є тільки на сторінках `home.ss.ge` (`credentialsToken`,
-JWT, діє 1 год, IP не прив'язаний). Тому ключ бере Mac, решта лишається на GitHub.
+з ~16:00 до 22:14). З Mac усе відкривається. **API `api-gateway.ss.ge` тоді був не за Cloudflare і GitHub
+відкритий** (з 27.10.2026 ~16:10 — уже ні, див. «Історію»), бракувало лише гостьового ключа: його видає тільки
+`home.ss.ge` (JWT від `account.ss.ge`, `client_id` ssweb, діє 1 год, IP не прив'язаний; з 27.10.2026 — у cookie
+`ss-session-token`, раніше — `credentialsToken` у даних сторінки). Тому ключ бере Mac, решта лишається на GitHub.
 
 ```
-Mac (launchd, кожні 20 хв) ──► home.ss.ge ──► ключ ──► gh secret set SSGE_API_TOKEN
+Mac (launchd, кожні 5 хв) ──► home.ss.ge ──► ключ ──► якщо довший за переданий: gh secret set SSGE_API_TOKEN
 GitHub (кожні 10 хв) ──► бере SSGE_API_TOKEN ──► API ss.ge ──► група
 ```
 
 - `mac_token.py` — у репозиторії (дослівно як у Тбілісі, крім `REPO`), але launchd не має доступу до
   «Робочого столу», тож на Mac працює **копія**: `~/Library/Application Support/ss.ge_batumi/mac_token.py`;
-  розклад — `~/Library/LaunchAgents/local.ss.ge_batumi.token.plist` (`StartInterval` 1200, `RunAtLoad`);
+  розклад — `~/Library/LaunchAgents/local.ss.ge_batumi.token.plist` (`StartInterval` 300, `RunAtLoad`);
   журнал — `~/Library/Logs/ss.ge_batumi_token.log`. 3 спроби з паузою 30 с. Ключ у журнал не пишеться.
   `gh` (`/opt/homebrew/bin/gh`) бере вхід з Keychain. Це **окреме** завдання від Тбілісі — те пише секрет
   у свій репозиторій, це в `ss.ge_batumi`.
+- На GitHub ключ іде, лише якщо діє довше за вже переданий: дата переданого (`exp`) — у
+  `mac_token_exp.txt` поруч з копією скрипта (у `.gitignore`). У журнал пишеться лише передача
+  («ключ оновлено, діє до HH:MM», раз-два на годину) і помилки; перевірки без передачі — мовчки.
 - **Після зміни `mac_token.py`** скопіювати його в `~/Library/Application Support/ss.ge_batumi/`.
   Перезапуск розкладу: `launchctl kickstart gui/$(id -u)/local.ss.ge_batumi.token`; вимкнути —
-  `launchctl bootout gui/$(id -u)/local.ss.ge_batumi.token`.
+  `launchctl bootout gui/$(id -u)/local.ss.ge_batumi.token`. Після зміни plist `kickstart` мало:
+  `bootout`, потім `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.ss.ge_batumi.token.plist`.
 - У `watcher.py` (`token_expiry`, `mac_token`, `api_token`; дослівно як у Тбілісі): спершу бере
   `SSGE_API_TOKEN`, якщо той діє ще ≥ 2 хв (`exp` з JWT, без перевірки підпису); інакше або на 401 — як
   раніше, з головної (якщо ss.ge зніме блок, бот працюватиме й без Mac). У журналі Actions видно, звідки
   ключ: «ключ до API — з Mac, діє до…» чи «ключ з Mac прострочений… Mac, мабуть, спить».
-- **Залежність від Mac:** поки Mac спить чи вимкнений, ключ живе ще до години, далі бот стоїть. Після 6
+- **Залежність від Mac:** поки Mac спить чи вимкнений, ключ живе ще до години (з 27.10.2026 часто менше —
+  сайт віддає не новий ключ), далі бот стоїть. Після 6
   невдалих перевірок (`FAIL_ALERT_AFTER`) в основну групу йде «⚠️ …», після відновлення — «✅». Пропущене
   приходить, якщо воно серед 48 найновіших у пошуку (`PAGES_PER_RUN` 3).
 
 ## Як бот читає ss.ge
 
-- **Ключ до API** — гостьовий JWT (`client_id: ssweb`, діє 1 год), який сайт кладе в кожну
-  сторінку: `__NEXT_DATA__` → `props.pageProps.credentialsToken`. Бот бере його з головної
-  (`/ru/`, ~130 КБ стисненого) раз на запуск; на `401` бере свіжий. Легшої сторінки з ключем немає.
+- **Ключ до API** — гостьовий JWT (`client_id: ssweb`, діє 1 год). З 27.10.2026 головна ставить його в
+  cookie `ss-session-token` (`Set-Cookie`, без HttpOnly); до того сайт клав його в кожну сторінку:
+  `__NEXT_DATA__` → `props.pageProps.credentialsToken`. Бот (`api_token`) бере його з головної
+  (`/ru/`, ~130 КБ стисненого) раз на запуск — спершу cookie, інакше `credentialsToken`; на `401` бере
+  свіжий. `_http` повертає й cookie відповіді (curl_cffi — `resp.cookies`, urllib — `Set-Cookie`).
 - **Пошук** — `POST https://api-gateway.ss.ge/v1/RealEstate/LegendSearch` з `Authorization:
-  Bearer …`. API не за Cloudflare (сервер Kestrel); за Cloudflare лише сторінки `home.ss.ge`.
+  Bearer …`. До 27.10.2026 API був не за Cloudflare (сервер Kestrel), з ~16:10 того дня — за ним
+  (`server: cloudflare`): з Mac пускає, серверам GitHub — 403 «Just a moment...».
   **Обов'язково `Accept-Language: ru`**, інакше назви й описи приходять англійською.
 - Тіло запиту — параметри з адреси сторінки пошуку під тими самими назвами (`search_params`):
   тип і угода з шляху (`/l/Квартира/Аренда` = `realEstateType: 5`, `realEstateDealType: 1`;
@@ -126,7 +138,7 @@ GitHub → Settings → Secrets and variables → Actions:
 | `TELEGRAM_CHAT_ID` (secret) | та сама робоча група, що в myhome (оренда, основна) |
 | `TELEGRAM_CHAT_ID_SALE` (secret) | група продажу «, ss/myhome/fb (Продажа)» — для пошуків з `\| sale` (з 16.10.2026), `-1004313346200` (супергрупа; старий `-5209535433` не діє). Кілька чатів — через кому |
 | `ANTHROPIC_API_KEY` (secret) | переклад російською грузинських/англійських описів і адрес (Claude Haiku 5.5, з 15.10.2026). Без нього — просто без перекладу |
-| `SSGE_API_TOKEN` (secret) | гостьовий ключ до API ss.ge; кожні 20 хв його перезаписує Mac (`mac_token.py`, з 22.10.2026). Вручну не міняти |
+| `SSGE_API_TOKEN` (secret) | гостьовий ключ до API ss.ge; його перезаписує Mac (`mac_token.py`, з 22.10.2026; перевіряє кожні 5 хв). Вручну не міняти |
 
 **Переклад.** ss.ge сам перекладає більшість оголошень, але не всі: 15.10.2026 у 12 з 320 (~4%) опис був
 лише грузинською. Їх перекладає Claude — код дослівно як у myhome_batumi (масова правка координатора №2,
@@ -236,6 +248,34 @@ GitHub → Settings → Secrets and variables → Actions:
   які перевірки, чи перезапущено бота.
 
 ## Історія
+
+### 27.10.2026 — ключ до API тепер у cookie; API закрився для GitHub
+- **Що сталося.** О ~13:29 ss.ge оновив сайт: `credentialsToken` з даних сторінки зник, Mac з 13:29 писав «на
+  сторінці ss.ge немає ключа до API», останній ключ діяв до 14:09, далі бот стояв (ss.ge_tbilisi — так само).
+  Той самий гостьовий ключ сайт тепер ставить у cookie `ss-session-token`. **Друга зміна:** раніше кожен запит
+  отримував свіжий ключ на годину, а тепер кожен сервер ss.ge (їх кілька) роздає той самий, поки той не спливе,
+  тож ключу з сайту може лишатися кілька хвилин; з оновленням раз на 20 хв бот щогодини стояв би до 20 хв.
+- **Що зроблено** (масова правка за зразком ss.ge_tbilisi, коміт bfbf446 там; перенесено вручну):
+  `mac_token.py` — дослівно як там, крім шляхів і `REPO`: ключ спершу з cookie, інакше з `credentialsToken`;
+  на GitHub — лише ключ, що діє довше за вже переданий (`mac_token_exp.txt`, у `.gitignore`); журнал «ключ
+  оновлено, діє до HH:MM». `watcher.py` — `_http_once`/`_http` повертають і cookie, `page_data` → `(pageProps,
+  cookies)`, `api_token` бере `ss-session-token` або `credentialsToken` (функції ключа й HTTP звірено з Тбілісі —
+  дослівно). На Mac: копія скрипта в `Application Support`, `StartInterval` 1200 → 300, `bootout` + `bootstrap`.
+- **Перевірки** (копія бота без `telegram.json`, нічого не пішло в групи): 16 перевірок ключа у `watcher.py` —
+  живий ss.ge через curl_cffi і urllib (cookie є, `credentialsToken` немає, LegendSearch — 200), 401 → свіжий
+  ключ з головної, старий вигляд сайту, обидва місця (cookie першим), без ключа, 403 (з повтором), дійсний і
+  прострочений ключ з Mac, розбір `Set-Cookie` в urllib; 15 офлайн-перевірок `mac_token.py` з підставним `gh`
+  (передача й запис дати, той самий / коротший ключ — мовчки без `gh`, довший — передає, `gh` зламався — 3
+  спроби без запису дати, `exp` не читається, сайт без ключа, зіпсований файл дати); `--once` у копії проти
+  живого ss.ge — 12 нових за час простою, без помилок. Після встановлення: журнал Mac «16:18:36 ключ оновлено,
+  діє до 17:01», секрет оновлено; ручний запуск workflow (run 40502926521): «ключ до API — з Mac, діє до 17:01».
+  Далі Mac сам: 16:23 — мовчки (новішого ключа не було), 16:28:40 — «ключ оновлено, діє до 17:25».
+- **Але API тепер за Cloudflare.** У тому ж ручному запуску API відповів 403. Тимчасова гілка `diag-api` з
+  пробним workflow (видалено одразу після): з серверів GitHub `api-gateway.ss.ge` віддає 403 `cf-mitigated:
+  challenge` «Just a moment...» — і з ключем Mac, і з зіпсованим, і без ключа, і через urllib; з Mac той самий
+  ключ — 200 (`server: cloudflare`). Бот Тбілісі з новим ключем о 16:01 і 16:05 ще надсилав оголошення з
+  GitHub, о 16:15 — уже 403, тож Cloudflare на API увімкнули між 16:05 і 16:15. Ключ з cookie правильний; бот
+  стоїть через блок. Якщо блок лишиться — бот треба запускати з Mac (рішення за користувачем).
 
 ### 23.10.2026 — більше трьох оголошень на сайті — не надсилати (як у ss.ge_tbilisi)
 - Що й навіщо — у розділі «Більше трьох оголошень на сайті — агент». Змінено `watcher.py` (`MAX_SITE_LISTINGS`),
