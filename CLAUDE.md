@@ -30,45 +30,48 @@ workflow) — спитай, чи повторити в myhome_batumi, і нав�
 повертати — у myhome її прибрали 30.09.2026 (див. CLAUDE.md там). Пошуків продажу три, а не шість, як у myhome:
 Чакві тут — окреме «місто» в тому самому `cityIdList` (див. «Дві групи»).
 
-## Як запускається (з 27.10.2026 — на Mac)
+## Як запускається (з 27.10.2026 — на Mac, без GitHub)
 
 ```
-Mac (launchd, :05 :15 :25…) ──► mac_run.py: git pull ──► watcher.py --once ──► групи
-                                            └──► state.json ──► git push у main
+Mac (launchd, :05 :15 :25…) ──► bot/watcher.py --once ──► ss.ge ──► групи
+                                        └──► bot/state.json (пам'ять бота — лише на Mac)
 ```
 
 27.10.2026 ~16:10 ss.ge сховав за Cloudflare і API, і сервери GitHub більше не можуть читати ss.ge зовсім (див.
-«Історію»). Рішення користувача («зроби так само, як у ss.ge_tbilisi»): перевірки робить сам Mac.
-- Копія репозиторію — `~/Library/Application Support/ss.ge_batumi/repo/` (`git clone` плюс `telegram.json`,
-  `chmod 600`), бо launchd не має доступу до «Робочого столу». Розклад —
-  `~/Library/LaunchAgents/local.ss.ge_batumi.watch.plist` (`StartCalendarInterval`, хвилини 5,15,…,55 — як був
-  будильник, зсув від myhome_batumi, що шле в ту саму групу; без `RunAtLoad`; копія plist — і в
-  `Application Support/ss.ge_batumi/`). Python — `/Library/Frameworks/Python.framework/Versions/3.14/bin/python3`
-  (у ньому є `curl_cffi` і `anthropic`). Журнал — `~/Library/Logs/ss.ge_batumi.log` (росте ~100–200 КБ на день,
-  раз на кілька місяців можна чистити).
-- `mac_run.py` — дослівно як у ss.ge_tbilisi, крім шляхів: `git pull --rebase --autostash` (не вдався —
-  `rebase --abort` і прохід зі старим кодом), `watcher.py --once` (до 8 хв), коміт `state.json` («state: update
-  [skip ci]») і `push`: 3 спроби з `pull --rebase -X theirs` — у конфлікті перемагає база з Mac; невикладені
-  коміти докладає наступного разу. Коміти — від romario00724-glitch (локальний `git config` копії), вхід —
-  `gh auth git-credential`.
-- **Код міняти тут, на «Робочому столі», і `git push`** — Mac підтягне його перед наступним проходом сам (і
-  `mac_run.py` теж). Копію в Application Support руками не правити. `telegram.json` там — окремий файл: якщо
-  міняєте його тут, скопіюйте й туди.
+«Історію»). Рішення користувача: перевірки робить сам Mac, а з 17:34 того ж дня — **зовсім без GitHub**, як боти
+tg/threads/fb: бот нічого не бере з GitHub і нічого туди не шле.
+- Робоча папка бота — `~/Library/Application Support/ss.ge_batumi/bot/` (не git): `watcher.py`, `no_realtors.py`,
+  `searches.txt`, `telegram.json` (`chmod 600`) і **`state.json` — єдина справжня пам'ять бота** (у папці на
+  «Робочому столі» її немає). Папка там, бо launchd не має доступу до «Робочого столу».
+- Розклад — `~/Library/LaunchAgents/local.ss.ge_batumi.watch.plist` (копія — у `Application Support/ss.ge_batumi/`):
+  `StartCalendarInterval`, хвилини 5,15,…,55 (зсув від myhome_batumi, що шле в ту саму групу), без `RunAtLoad`;
+  запускає прямо `python3 bot/watcher.py --once` (Python — `/Library/Frameworks/Python.framework/Versions/3.14/bin/python3`,
+  у ньому є `curl_cffi` і `anthropic`). Усі запити бота мають обмеження часу (30–120 с), тож прохід не зависає, а
+  launchd не запускає наступний, поки йде попередній. Журнал — `~/Library/Logs/ss.ge_batumi.log` (~100–200 КБ на
+  день, раз на кілька місяців можна чистити).
+- **Код міняти тут, на «Робочому столі», і копіювати змінені файли в `bot/`:**
+  `cp watcher.py no_realtors.py searches.txt ~/Library/Application\ Support/ss.ge_batumi/bot/` — наступний прохід
+  уже з новим кодом. `state.json` і `telegram.json` у `bot/` не перезаписувати. **На GitHub нічого не відправляти —
+  ні код, ні базу** (рішення користувача 27.10.2026): коміти лише локальні, репозиторій на GitHub — архів.
 - Ключ до API бот бере сам з головної — у журналі «ключ до API — з головної ss.ge, діє до…».
 - **Mac спить чи вимкнений — бот стоїть**; після пробудження launchd робить один пропущений прохід. Пропущене
   приходить, якщо воно серед 48 найновіших у пошуку (`PAGES_PER_RUN` 3). Після 6 невдалих проходів поспіль в
   основну групу йде «⚠️ …», після відновлення — «✅». Як і боти tg/threads/fb, працює, поки Mac на зарядці й не спить.
-- Чи живий: `tail ~/Library/Logs/ss.ge_batumi.log` або свіжі коміти «state: update» від romario00724-glitch на
-  GitHub. Позачерговий прохід — `launchctl kickstart gui/$(id -u)/local.ss.ge_batumi.watch`; вимкнути —
-  `launchctl bootout gui/$(id -u)/local.ss.ge_batumi.watch` і прибрати plist з LaunchAgents (інакше після
-  перезавантаження ввімкнеться знову).
-- **GitHub вимкнено:** workflow — `gh workflow disable watch.yml` (секрети лишилися); завдання cron-job.org
-  (job 8544193) вимикає користувач сам — входу туди в Claude немає (поки воно ввімкнене, його виклики вимкненого
-  workflow просто не спрацьовують). Повернути на GitHub (якщо ss.ge колись відкриє API): `gh workflow enable
-  watch.yml`, увімкнути завдання cron-job.org і вимкнути розклад Mac — **ніколи не обидва разом**, інакше
-  оголошення прийдуть двічі.
-- Передача ключа на GitHub (`mac_token.py`, розклад `local.ss.ge_batumi.token`) з 27.10.2026 не потрібна й
-  вимкнена: plist перенесено в `~/Library/Application Support/ss.ge_batumi/disabled/`.
+  Запасної копії пам'яті ніде немає: пропаде `bot/state.json` — бот засіє пошуки заново (тихо запам'ятає поточні
+  оголошення й напише «Слежу за поиском…»), лічильники авторів почнуться з нуля.
+- Чи живий: `tail ~/Library/Logs/ss.ge_batumi.log` (рядок щонайменше кожні 10 хв). Позачерговий прохід —
+  `launchctl kickstart gui/$(id -u)/local.ss.ge_batumi.watch`; вимкнути — `launchctl bootout
+  gui/$(id -u)/local.ss.ge_batumi.watch` і прибрати plist з LaunchAgents (інакше після перезавантаження ввімкнеться знову).
+- **GitHub вимкнено зовсім:** workflow — `gh workflow disable watch.yml` (секрети лишилися); `state.json` з
+  репозиторію прибрано (у `.gitignore`); останній коміт на GitHub — архів станом на 27.10.2026. Завдання
+  cron-job.org (job 8544193) вимикає користувач сам — входу туди в Claude немає (поки воно ввімкнене, його виклики
+  вимкненого workflow просто не спрацьовують). Повернути на GitHub (якщо ss.ge колись відкриє API): вимкнути розклад
+  Mac, повернути `bot/state.json` у репозиторій (прибрати рядок з `.gitignore`, коміт, push), `gh workflow enable
+  watch.yml`, увімкнути завдання cron-job.org — **ніколи не обидва разом**, інакше оголошення прийдуть двічі.
+- `mac_run.py` (git pull → прохід → `state.json` на GitHub, як і досі в ss.ge_tbilisi) лишився в репозиторії, але
+  тут не використовується: він працював лише 17:20–17:34 27.10.2026. Передача ключа (`mac_token.py`, розклад
+  `local.ss.ge_batumi.token`) вимкнена: plist у `~/Library/Application Support/ss.ge_batumi/disabled/`.
+- Відмінність від близнюка: **ss.ge_tbilisi** теж на Mac, але через `mac_run.py`, тобто зберігає `state.json` на GitHub.
 
 ### До 27.10.2026 — GitHub Actions (тепер вимкнено)
 
@@ -271,9 +274,11 @@ GitHub → Settings → Secrets and variables → Actions:
 
 ## Правила роботи з кодом
 
-- **Не запускати `python watcher.py` з цієї папки** (тут теж є `telegram.json`) — бот уже працює на Mac з копії
-  в Application Support; у двох копій різні `state.json`, і ті самі оголошення прийдуть у групу двічі.
-  Позачерговий прохід — лише `launchctl kickstart` (див. «Як запускається»).
+- **Не запускати `python watcher.py` з цієї папки** (тут теж є `telegram.json`) — бот уже працює на Mac з папки
+  `bot/` в Application Support; тут немає його пам'яті, і перший же запуск засіяв би пошуки заново й надіслав би
+  «Слежу за поиском…» у групи. Позачерговий прохід — лише `launchctl kickstart` (див. «Як запускається»).
+- **На GitHub нічого не відправляти** (з 27.10.2026) — коміти лише локальні; після зміни коду скопіювати файли в
+  `bot/` (див. «Як запускається»).
 - **`import watcher` + наявний `telegram.json` = реальні повідомлення** в робочу групу. У тестах
   глушити `tg_call`, `tg_upload`, `download_image`, `anthropic.Anthropic` (переклад; або одразу `claude_json`) і `save_state` (або
   підмінити `STATE_FILE`). Без `telegram.json` і змінних `TELEGRAM_*` бот лише друкує в консоль —
@@ -297,6 +302,17 @@ GitHub → Settings → Secrets and variables → Actions:
   які перевірки, чи перезапущено бота.
 
 ## Історія
+
+### 27.10.2026 — зовсім без GitHub (як боти tg/threads/fb)
+- Користувач спитав, навіщо бот на Mac шле щось на GitHub, і вирішив («Зроби»): як боти Telegram/Threads/FB —
+  пам'ять і код лише на Mac, на GitHub нічого не відправляти.
+- 17:33 розклад зупинено між проходами (`bootout`); з копії-клону (`repo/`, без невикладених комітів, файли — як на
+  «Робочому столі») зроблено папку `bot/` без git (`watcher.py`, `no_realtors.py`, `searches.txt`, `state.json`,
+  `telegram.json`), `repo/` прибрано. Новий `local.ss.ge_batumi.watch.plist` запускає прямо `bot/watcher.py --once`
+  (ті самі хвилини, без `mac_run.py`). У репозиторії `state.json` прибрано з відстеження й додано в `.gitignore`.
+- Перевірено: прохід 17:34 (`kickstart`) — ключ з головної, «оброблено нових оголошень: 1 з 1» (пропущено: у автора
+  11 оголошень), `bot/state.json` оновився (40 побачених за день), на GitHub нового коміту немає.
+- Останній push на GitHub — цей запис (архів). ss.ge_tbilisi лишився з `mac_run.py` (пам'ять на GitHub).
 
 ### 27.10.2026 — перевірки перенесено на Mac (як у ss.ge_tbilisi)
 - Причина: з ~16:10 API ss.ge за Cloudflare і серверам GitHub не відповідає (попередній запис). Рішення
